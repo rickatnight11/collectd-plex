@@ -158,22 +158,57 @@ def sum_sessions(data):
 
 
 def main():
-    if (len(sys.argv) < 5) or (len(sys.argv) > 6):
-        infomessage('{} <host> <port> <authtoken> <metric> [<section>]'.format(sys.argv[0]))
-        infomessage('Metrics:')
-        infomessage('- movies')
-        infomessage('- shows')
-        infomessage('- episodes')
-        errormessage('- sessions')
-    section = sys.argv[5] if len(sys.argv) == 6 else None
-    conf = {
-        'host': sys.argv[1],
-        'port': sys.argv[2],
-        'authtoken': sys.argv[3],
-        'metric': sys.argv[4],
-        'section': section
-    }
 
+    # Handle arguments
+    parser = argparse.ArgumentParser(
+        description='Collect metrics from Plex Media Server.')
+    parser.add_argument(
+        'host',
+        metavar='<HOSTNAME>',
+        help='PMS hostname')
+    parser.add_argument(
+        'port',
+        metavar='<PORT>',
+        type=int,
+        help='PMS port')
+    parser.add_argument(
+        'authtoken',
+        metavar='<AUTH_TOKEN>',
+        help='plex.tv authentication token')
+    parser.add_argument(
+        '--https',
+        action='store_true',
+        help='Use HTTPS instead of HTTP')
+    parser.add_argument(
+        '--sessions',
+        action='store_true',
+        help='Collect session count')
+    parser.add_argument(
+        '--movies',
+        action='store_true',
+        help='Collect movie count(s)')
+    parser.add_argument(
+        '--shows',
+        action='store_true',
+        help='Collect show count(s)')
+    parser.add_argument(
+        '--episodes',
+        action='store_true',
+        help='Collect episode count(s)')
+    parser.add_argument(
+        '-i', '--include',
+        nargs='+',
+        metavar='SECTION',
+        help='section(s) to collect from')
+    parser.add_argument(
+        '-e', '--exclude',
+        nargs='+',
+        metavar='SECTION',
+        help='section(s) to exclude collecting from')
+
+    
+    conf = parser.parse_args()
+    
     def callback(type_instance, plugin_instance, value):
         print({
             'value': value,
@@ -185,8 +220,12 @@ def main():
     get_metrics(conf, callback)
 
 
+# Called interactively
 if __name__ == '__main__':
 
+    import argparse
+
+    # Define poor-man's messaging bus for printing
     def infomessage(message):
         print(message)
     def warnmessage(message):
@@ -194,10 +233,16 @@ if __name__ == '__main__':
     def errormessage(message):
         print(message)
         sys.exit(1)
+
+    # Execute interactive codepath
     main()
+
+# Called from collectd
 else:
+
     import collectd
 
+    # Define poor-man's messaging bus for collectd messaging
     def infomessage(message):
         collectd.info('plex plugin: ' + message)
     def warnmessage(message):
@@ -206,5 +251,6 @@ else:
         collectd.error('plex plugin: ' + message)
         sys.exit(1)
 
+    # Execute collectd codepath
     collectd.register_config(configure_callback)
     collectd.register_read(read_callback)
