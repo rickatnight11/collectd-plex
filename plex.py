@@ -21,9 +21,10 @@ def dispatch_value(type_instance, plugin_instance, value):
 def get_metrics(collectd=True):
     '''Collect requested metrics and handle appropriately'''
 
-    metrics = {}
+    metrics = []
 
-    print(CONFIG)
+    # Get PMS name
+    CONFIG.servername = get_server_name()
 
     # Check for metric to collect
     if not (CONFIG.movies or CONFIG.shows or CONFIG.episodes or CONFIG.sessions):
@@ -31,8 +32,32 @@ def get_metrics(collectd=True):
 
     # Collect media size metrics
     if CONFIG.movies or CONFIG.shows or CONFIG.episodes:
-        print('collect media metrics!')
+        sections = get_sections()
+        #print(section['key'] + " " + section['title'] + " - " + section['type'])
         # (value, data) = get_media_count(conf)
+
+        # Filter included sections, if specified
+        if len(CONFIG.include) > 0:
+            filteredsections = {}
+            for section in CONFIG.include:
+                if section in sections.keys():
+                    filteredsections[section] = sections[section]
+                else:
+                    warnmessage('Requested section {0} not found on PMS!'.format(section))
+        else:
+            filteredsections = sections.keys()
+
+        for section in filteredsections:
+            # Filter out excluded sections
+            if section in CONFIG.exclude:
+                continue
+            # Filter movie sections
+            if sections[section]['type'] == 'movie' and CONFIG.movies:
+                metrics.append(get_movies_metric(section))
+            # Filter show sections
+            elif sections[section]['type'] == 'show' and (CONFIG.shows or CONFIG.episodes):
+                metrics.extend(get_shows_metrics(section, CONFIG.shows, CONFIG.episodes))
+
 
     # Collect session metrics
     if CONFIG.sessions:
@@ -44,7 +69,8 @@ def get_metrics(collectd=True):
 
     if len(metrics) == 0:
         errormessage('No metrics collected!  Something is wrong!')
-
+    else:
+        print(metrics)
     sys.exit(1)
 
     if collectd is True:
@@ -60,43 +86,80 @@ def get_metrics(collectd=True):
                                                    type_instance)
         })
 
-def get_media_count(conf):
+def api_request(path):
+    '''Return JSON object from requested PMS path'''
 
-    url = 'http://{host}:{port}/library/sections/{section}/all'.format(host=conf['host'],
-                                                                       port=conf['port'],
-                                                                       section=conf['section'])
-
-    data = get_json(url, conf['authtoken'])
-    validate_media_type(conf['section'], data['librarySectionTitle'], conf['metric'], data['viewGroup'])
-
-    if conf['metric'] in ['movies', 'shows']:
-    	count = sum_videos(data, False)
-    elif conf['metric'] in ['episodes']:
-        count = sum_videos(data, True)
-
-    return (count, data)
-
-def validate_media_type(section, title, metric, media):
-
-    mapping = {'movies': 'movie',
-               'shows': 'show',
-               'episodes': 'show'}
-
-    if mapping[metric] != media:
-        errormessage('Section #{0} ({1}) contains {2}s. Does not match metric, {3}!'.format(section,
-                                                                                            title,
-                                                                                            media,
-                                                                                            metric))
-        sys.exit(1)
+    if CONFIG.https:
+        protocol = 'https'
     else:
-        return True
+        protocol = 'http'
+
+    url = '{protocol}://{host}:{port}{path}'.format(protocol=protocol,
+                                                    host=CONFIG.host,
+                                                    port=CONFIG.port,
+                                                    path=path)
+
+    return get_json(url, CONFIG.authtoken)
+
+
+def get_server_name():
+    '''Pull basic server details from PMS'''
+
+    server = api_request('/')
+    return server['friendlyName']
+
+
+def get_sections():
+    '''Pull sections from PMS'''
+
+    sectionobject = api_request('/library/sections')
+
+    if not sectionobject.has_key('_children'):
+        warnmessage('PMS API returned unexpected format from "/library/sections"')
+        return False
+    else:
+        sections = {}
+        for section in sectionobject['_children']:
+            sections[section['key']] = section
+        return sections
+
+
+def get_section(section):
+    '''Return json object of PMS library section'''
+    return api_request('/library/sections/{}/all'.format(section))
+
+
+def get_movies_metric(section):
+    '''Return number of movies in section'''
+
+    return {'type': 'movies',
+            'section': section,
+            'value': sum_videos(get_section(section))}
+    
+
+def get_shows_metrics(section, shows, episodes):
+    '''Return number of shows and/or episodes'''
+
+    metrics = []
+
+    if not (shows or episodes):
+        warningmessage('Must request number of shows and/or episodes!')
+    sectionobject = get_section(section)
+    if shows:
+        metrics.append({'type': 'shows',
+                        'section': section,
+                        'value': sum_videos(sectionobject, False)})
+    if episodes:
+        metrics.append({'type': 'episodes',
+                        'section': section,
+                        'value': sum_videos(sectionobject, True)})
+    return metrics
 
 
 def get_sessions(conf):
 
-    url = 'http://{host}:{port}/status/sessions'.format(
-        host=conf['host'],
-        port=conf['port'],
+    url = 'http://{host}:{port}/status/sessions'.format(host=conf['host'],
+                                                      port=conf['port'],
         section=conf['section']
     )
 
@@ -129,10 +192,10 @@ def get_json(url, authtoken):
     return r.json()
 
 
-def sum_videos(data, sum_leaf=False):
+def sum_videos(section, sum_leaf=False):
     if sum_leaf:
-        return sum(c['leafCount'] for c in data['_children'])
-    return len(data['_children'])
+        return sum(c['leafCount'] for c in section['_children'])
+    return len(section['_children'])
 
 def sum_sessions(data):
     return len(data['_children'])
@@ -179,11 +242,13 @@ def parse_config(collectdconfig=None):
     parser.add_argument(
         '-i', '--include',
         nargs='+',
+        default=[],
         metavar='SECTION',
         help='section(s) to collect from')
     parser.add_argument(
         '-e', '--exclude',
         nargs='+',
+        default=[],
         metavar='SECTION',
         help='section(s) to exclude collecting from')
 
