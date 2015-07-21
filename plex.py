@@ -2,82 +2,63 @@
 
 from __future__ import print_function
 
+import argparse
 import sys
 import requests
 
-CONFIGS = []
-
-
-def configure_callback(conf):
-    host = None
-    port = None
-    metric = None
-    section = None
-    instance = None
-    authtoken = None
-
-    for node in conf.children:
-        key = node.key.lower()
-        val = node.values[0]
-
-        if key == 'host':
-            host = val
-        elif key == 'port':
-            port = int(val)
-        elif key == 'metric':
-            metric = val
-        elif key == 'section':
-            section = str(int(val))
-        elif key == 'authtoken':
-            authtoken = val
-        else:
-            warnmessage(' Unknown config key: %s.' % key)
-            continue
-
-    config = {
-        'host': host,
-        'port': port,
-        'authtoken': authtoken,
-        'metric': metric,
-        'section': section
-    }
-
-    infomessage('Configured with {}'.format(config))
-    CONFIGS.append(config)
-
-
-def read_callback():
-    for conf in CONFIGS:
-        get_metrics(conf)
-
+CONFIG = None
 
 def dispatch_value(type_instance, plugin_instance, value):
-    val = collectd.Values(plugin='plex')
-    val.type = 'gauge'
-    val.type_instance = type_instance
-    val.plugin_instance = plugin_instance
-    val.values = [value]
+    '''Dispatch metric to collectd'''
+    val = collectd.Values(plugin='plex',
+                          type='gauge',
+                          type_instance=type_instance,
+                          plugin_instance=plugin_instance,
+                          values = [value])
     val.dispatch()
 
 
-def get_metrics(conf, callback=None):
+def get_metrics(collectd=True):
+    '''Collect requested metrics and handle appropriately'''
 
-    if conf['metric'] in ['movies', 'shows', 'episodes']:
-        if conf['section'] is None:
-            errormessage('Must provide section number to find media count!')
-        (value, data) = get_media_count(conf)
-    elif conf['metric'] in ['sessions']:
-        (value, data) = get_sessions(conf) 
-    else:
-        errormessage('Unknown metric type: {0}'.format(conf['metric']))
+    metrics = {}
 
-    plugin_instance = get_plugin_instance(conf)
-    type_instance = get_type_instance(data, conf)
+    print(CONFIG)
 
-    if callback is None:
+    # Check for metric to collect
+    if not (CONFIG.movies or CONFIG.shows or CONFIG.episodes or CONFIG.sessions):
+        errormessage('No metrics configured to be collected!')
+
+    # Collect media size metrics
+    if CONFIG.movies or CONFIG.shows or CONFIG.episodes:
+        print('collect media metrics!')
+        # (value, data) = get_media_count(conf)
+
+    # Collect session metrics
+    if CONFIG.sessions:
+        print('collect session metrics!')
+        # (value, data) = get_sessions(conf) 
+
+    #plugin_instance = get_plugin_instance(conf)
+    #type_instance = get_type_instance(data, conf)
+
+    if len(metrics) == 0:
+        errormessage('No metrics collected!  Something is wrong!')
+
+    sys.exit(1)
+
+    if collectd is True:
+        # Dispatch metrics back to collectd
         dispatch_value(type_instance, plugin_instance, value)
     else:
-        callback(type_instance, plugin_instance, value)
+        # Print metrics in interactive mode
+        print({
+            'value': value,
+            'type_instance': type_instance,
+            'plugin_instance': plugin_instance,
+            'full_name': 'plex-{}.{}.value'.format(plugin_instance,
+                                                   type_instance)
+        })
 
 def get_media_count(conf):
 
@@ -157,7 +138,7 @@ def sum_sessions(data):
     return len(data['_children'])
 
 
-def main():
+def parse_config(collectdconfig=None):
 
     # Handle arguments
     parser = argparse.ArgumentParser(
@@ -206,24 +187,16 @@ def main():
         metavar='SECTION',
         help='section(s) to exclude collecting from')
 
-    
-    conf = parser.parse_args()
-    
-    def callback(type_instance, plugin_instance, value):
-        print({
-            'value': value,
-            'type_instance': type_instance,
-            'plugin_instance': plugin_instance,
-            'full_name': 'plex-{}.{}.value'.format(plugin_instance,
-                                                   type_instance)
-        })
-    get_metrics(conf, callback)
+    if collectdconfig is None:
+        conf = parser.parse_args()
+    else:
+        conf = parser.parse_args(config)
+
+    return conf
 
 
 # Called interactively
 if __name__ == '__main__':
-
-    import argparse
 
     # Define poor-man's messaging bus for printing
     def infomessage(message):
@@ -234,8 +207,11 @@ if __name__ == '__main__':
         print(message)
         sys.exit(1)
 
-    # Execute interactive codepath
-    main()
+    # Handle commandline arguments
+    CONFIG = parse_config()
+
+    # Get metrics interactively
+    get_metrics(collectd=False)
 
 # Called from collectd
 else:
@@ -251,6 +227,80 @@ else:
         collectd.error('plex plugin: ' + message)
         sys.exit(1)
 
-    # Execute collectd codepath
+    # Configuration callback for collectd
+    def configure_callback(conf):
+        '''Handle collectd module parameters'''
+
+        # Initial/default parameters
+        host = None
+        port = None
+        authtoken = None
+        https = True
+        sessions = True
+	movies = True
+	shows = True
+	episodes = True
+	include = []
+	exclude = []
+
+        # Convert collectd module parameters
+	for node in conf.children:
+	    key = node.key.lower()
+	    val = node.values[0]
+
+            if key == 'host':
+	        host = val
+	    elif key == 'port':
+	        port = int(val)
+	    elif key == 'authtoken':
+	        authtoken = val
+	    elif key == 'https':
+	        https = val
+	    elif key == 'sessions':
+	        sessions = val,
+	    elif key == 'movies':
+	        movies = val,
+	    elif key == 'shows':
+	        shows = val,
+	    elif key == 'episodes':
+	        episodes = val,
+	    elif key == 'include':
+	        include = val,
+	    elif key == 'exclude':
+	        exclude = val,
+	    else:
+	        warnmessage(' Unknown config key: %s.' % key)
+	        continue
+
+        # Enforce required parameters
+        if host is None:
+            errormessage('Missing "Host" parameter!')
+        if port is None:
+            errormessage('Missing "Port" parameter!')
+        if authtoken is None:
+            errormessage('Missing "AuthToken" parameter!')
+
+        config = [
+            host,
+            port,
+            authtoken,
+            '--https', https,
+            '--sessions', sessions,
+            '--movies', movies,
+            '--shows', shows,
+            '--episodes', episodes,
+            '--include'
+        ]
+
+        config.extend(include)
+        config.appent('--exclude')
+        config.extend(exclude)
+
+        CONFIG = parse_config(config)
+
+
+    # Register configuration callback
     collectd.register_config(configure_callback)
-    collectd.register_read(read_callback)
+
+    # Register read callback
+    collectd.register_read(get_metrics)
