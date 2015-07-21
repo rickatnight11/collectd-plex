@@ -61,8 +61,7 @@ def get_metrics(collectd=True):
 
     # Collect session metrics
     if CONFIG.sessions:
-        print('collect session metrics!')
-        # (value, data) = get_sessions(conf) 
+        metrics.append(get_sessions())
 
     #plugin_instance = get_plugin_instance(conf)
     #type_instance = get_type_instance(data, conf)
@@ -156,17 +155,12 @@ def get_shows_metrics(section, shows, episodes):
     return metrics
 
 
-def get_sessions(conf):
+def get_sessions():
 
-    url = 'http://{host}:{port}/status/sessions'.format(host=conf['host'],
-                                                      port=conf['port'],
-        section=conf['section']
-    )
+    sessionsobject = api_request('/status/sessions')
 
-    data = get_json(url, conf['authtoken'])
-    count = sum_sessions(data)
-
-    return (count, data)
+    return {'type': 'sessions',
+            'value': sum_sessions(sessionsobject)}
 
 def get_plugin_instance(conf):
     return conf['host']
