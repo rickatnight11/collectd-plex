@@ -23,8 +23,8 @@ metrics as library size (movies, shows, episodes) and active sessions.
 * `Movies` - collect movie counts (defaults to `True`)
 * `Shows` - collect show counts (defaults to `True`)
 * `Episodes` - collect episode counts (defaults to `True`)
-* `IncludeSections` - sections to collect media counts for (assumes all, if excluded)
-* `ExcludeSections` - sections to ignore media counts for (assumes all, if excluded)
+* `Include` - sections to collect media counts for (assumes all, if excluded)
+* `Exclude` - sections to ignore media counts for (assumes all, if excluded)
 
 ## Usage
 
