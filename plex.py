@@ -33,8 +33,6 @@ def get_metrics(collectd=True):
     # Collect media size metrics
     if CONFIG.movies or CONFIG.shows or CONFIG.episodes:
         sections = get_sections()
-        #print(section['key'] + " " + section['title'] + " - " + section['type'])
-        # (value, data) = get_media_count(conf)
 
         # Filter included sections, if specified
         if len(CONFIG.include) > 0:
@@ -63,27 +61,23 @@ def get_metrics(collectd=True):
     if CONFIG.sessions:
         metrics.append(get_sessions())
 
-    #plugin_instance = get_plugin_instance(conf)
-    #type_instance = get_type_instance(data, conf)
-
     if len(metrics) == 0:
         errormessage('No metrics collected!  Something is wrong!')
-    else:
-        print(metrics)
-    sys.exit(1)
 
-    if collectd is True:
-        # Dispatch metrics back to collectd
-        dispatch_value(type_instance, plugin_instance, value)
-    else:
-        # Print metrics in interactive mode
-        print({
-            'value': value,
-            'type_instance': type_instance,
-            'plugin_instance': plugin_instance,
-            'full_name': 'plex-{}.{}.value'.format(plugin_instance,
-                                                   type_instance)
-        })
+    # Handle metrics accordingly
+    for metric in metrics:
+        if collectd is True:
+            # Dispatch metrics back to collectd
+            dispatch_value(metric['instance'], CONFIG.servername, metric['value'])
+        else:
+            # Print metrics in interactive mode
+            print({
+                'value': metric['value'],
+                'type_instance': metric['instance'],
+                'plugin_instance': CONFIG.servername,
+                'full_name': 'plex-{}.{}.value'.format(CONFIG.servername,
+                                                       metric['instance'])
+            })
 
 def api_request(path):
     '''Return JSON object from requested PMS path'''
@@ -131,8 +125,7 @@ def get_section(section):
 def get_movies_metric(section):
     '''Return number of movies in section'''
 
-    return {'type': 'movies',
-            'section': section,
+    return {'instance': 'movies-{}'.format(section),
             'value': sum_videos(get_section(section))}
     
 
@@ -145,12 +138,10 @@ def get_shows_metrics(section, shows, episodes):
         warningmessage('Must request number of shows and/or episodes!')
     sectionobject = get_section(section)
     if shows:
-        metrics.append({'type': 'shows',
-                        'section': section,
+        metrics.append({'instance': 'shows-{}'.format(section),
                         'value': sum_videos(sectionobject, False)})
     if episodes:
-        metrics.append({'type': 'episodes',
-                        'section': section,
+        metrics.append({'instance': 'episodes-{}'.format(section),
                         'value': sum_videos(sectionobject, True)})
     return metrics
 
@@ -159,23 +150,8 @@ def get_sessions():
 
     sessionsobject = api_request('/status/sessions')
 
-    return {'type': 'sessions',
+    return {'instance': 'sessions',
             'value': sum_sessions(sessionsobject)}
-
-def get_plugin_instance(conf):
-    return conf['host']
-
-
-def get_type_instance(data, conf):
-
-    if conf['metric'] == 'sessions':
-        return 'sessions'
-    elif conf['metric'] in ['movies', 'shows', 'episodes']:
-        if conf['section'] is None:
-            return conf['metric']+'-all'
-        else:
-            return conf['metric']+'-'+conf['section']
-
 
 def get_json(url, authtoken):
     headers = {
