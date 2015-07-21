@@ -20,7 +20,6 @@ def dispatch_value(type_instance, plugin_instance, value):
 
 def get_metrics(collectd=True):
     '''Collect requested metrics and handle appropriately'''
-
     metrics = []
 
     # Get PMS name
@@ -158,7 +157,7 @@ def get_json(url, authtoken):
                'Accept': 'application/json',
                'X-Plex-Token': authtoken
               }
-    r = requests.get(url, headers=headers)
+    r = requests.get(url, headers=headers, verify=False)
     return r.json()
 
 
@@ -225,8 +224,7 @@ def parse_config(collectdconfig=None):
     if collectdconfig is None:
         conf = parser.parse_args()
     else:
-        conf = parser.parse_args(config)
-
+        conf = parser.parse_args(collectdconfig)
     return conf
 
 
@@ -277,35 +275,38 @@ else:
 	episodes = True
 	include = []
 	exclude = []
-
         # Convert collectd module parameters
 	for node in conf.children:
 	    key = node.key.lower()
-	    val = node.values[0]
-
-            if key == 'host':
-	        host = val
-	    elif key == 'port':
-	        port = int(val)
-	    elif key == 'authtoken':
-	        authtoken = val
-	    elif key == 'https':
-	        https = val
-	    elif key == 'sessions':
-	        sessions = val,
-	    elif key == 'movies':
-	        movies = val,
-	    elif key == 'shows':
-	        shows = val,
-	    elif key == 'episodes':
-	        episodes = val,
-	    elif key == 'include':
-	        include = val,
-	    elif key == 'exclude':
-	        exclude = val,
-	    else:
-	        warnmessage(' Unknown config key: %s.' % key)
-	        continue
+            if key == 'include':
+               for section in node.values:
+                   include.append(str(int(section)))
+                   continue
+            elif key == 'exclude':
+               for section in node.values:
+                   exclude.append(str(int(section)))
+                   continue
+            else:
+	        val = node.values[0]
+                if key == 'host':
+                    host = val
+                elif key == 'port':
+                    port = str(int(val))
+                elif key == 'authtoken':
+                    authtoken = val
+                elif key == 'https':
+                    https = val
+                elif key == 'sessions':
+                    sessions = val,
+                elif key == 'movies':
+                    movies = val,
+                elif key == 'shows':
+                    shows = val,
+                elif key == 'episodes':
+                    episodes = val,
+                else:
+                    warnmessage(' Unknown config key: %s.' % key)
+                    continue
 
         # Enforce required parameters
         if host is None:
@@ -314,28 +315,31 @@ else:
             errormessage('Missing "Port" parameter!')
         if authtoken is None:
             errormessage('Missing "AuthToken" parameter!')
-
-        config = [
-            host,
-            port,
-            authtoken,
-            '--https', https,
-            '--sessions', sessions,
-            '--movies', movies,
-            '--shows', shows,
-            '--episodes', episodes,
-            '--include'
-        ]
-
-        config.extend(include)
-        config.appent('--exclude')
-        config.extend(exclude)
-
-        CONFIG = parse_config(config)
-
+        collectdconfig = [host,
+                          port,
+                          authtoken]
+        if https:
+            collectdconfig.append('--https')
+        if sessions:
+            collectdconfig.append('--sessions')
+        if movies:
+            collectdconfig.append('--movies')
+        if shows:
+            collectdconfig.append('--shows')
+        if episodes:
+            collectdconfig.append('--episodes')
+        
+        if len(include) > 0:
+            collectdconfig.append('--include')
+            collectdconfig.extend(include)
+        if len(exclude) > 0:
+            collectdconfig.append('--exclude')
+            collectdconfig.extend(exclude)
+        global CONFIG
+        CONFIG = parse_config(collectdconfig)
+        infomessage('configured with ' + str(CONFIG))
 
     # Register configuration callback
     collectd.register_config(configure_callback)
-
     # Register read callback
     collectd.register_read(get_metrics)
