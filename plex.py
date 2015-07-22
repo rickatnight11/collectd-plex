@@ -58,7 +58,7 @@ def get_metrics(collectd=True):
 
     # Collect session metrics
     if CONFIG.sessions:
-        metrics.append(get_sessions())
+        metrics.extend(get_sessions())
 
     if len(metrics) == 0:
         errormessage('No metrics collected!  Something is wrong!')
@@ -149,8 +149,32 @@ def get_sessions():
 
     sessionsobject = api_request('/status/sessions')
 
-    return {'instance': 'sessions',
-            'value': sum_sessions(sessionsobject)}
+    metrics = []
+
+    # Count total sessions
+    metrics.append({'instance': 'sessions-total',
+                    'value': sum_sessions(sessionsobject)})
+
+    # Count active/inactive sessions
+    active = 0
+    inactive = 0
+
+    for session in sessionsobject['_children']:
+        for child in session['_children']:
+            if child['_elementType'] == 'Player':
+                if child['state'] == 'playing':
+                    active += 1
+                else:
+                    inactive += 1
+                break
+
+    metrics.append({'instance': 'sessions-active',
+                    'value': active})
+    metrics.append({'instance': 'sessions-inactive',
+                    'value': inactive})
+
+    return metrics
+    
 
 def get_json(url, authtoken):
     headers = {
