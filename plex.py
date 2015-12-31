@@ -74,7 +74,7 @@ def get_metrics(collectd=True):
                 'value': metric['value'],
                 'type_instance': metric['instance'],
                 'plugin_instance': CONFIG.servername,
-                'full_name': 'plex-{}.{}.value'.format(CONFIG.servername,
+                'full_name': 'plex-{0}.{1}.value'.format(CONFIG.servername,
                                                        metric['instance'])
             })
 
@@ -118,13 +118,13 @@ def get_sections():
 
 def get_section(section):
     '''Return json object of PMS library section'''
-    return api_request('/library/sections/{}/all'.format(section))
+    return api_request('/library/sections/{0}/all'.format(section))
 
 
 def get_movies_metric(section):
     '''Return number of movies in section'''
 
-    return {'instance': 'movies-{}'.format(section),
+    return {'instance': 'movies-{0}'.format(section),
             'value': sum_videos(get_section(section))}
     
 
@@ -137,10 +137,10 @@ def get_shows_metrics(section, shows, episodes):
         warningmessage('Must request number of shows and/or episodes!')
     sectionobject = get_section(section)
     if shows:
-        metrics.append({'instance': 'shows-{}'.format(section),
+        metrics.append({'instance': 'shows-{0}'.format(section),
                         'value': sum_videos(sectionobject, False)})
     if episodes:
-        metrics.append({'instance': 'episodes-{}'.format(section),
+        metrics.append({'instance': 'episodes-{0}'.format(section),
                         'value': sum_videos(sectionobject, True)})
     return metrics
 
