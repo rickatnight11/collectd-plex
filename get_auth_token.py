@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import httplib, urllib, base64, socket, getpass, json
 
 # Grab user credentials
