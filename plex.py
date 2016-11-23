@@ -78,8 +78,8 @@ def get_metrics(collectd=True):
                                                        metric['instance'])
             })
 
-def api_request(path):
-    '''Return JSON object from requested PMS path'''
+def api_request(path, structure='json'):
+    '''Return JSON/XML object from requested PMS path'''
 
     if CONFIG.https:
         protocol = 'https'
@@ -91,7 +91,13 @@ def api_request(path):
                                                     port=CONFIG.port,
                                                     path=path)
 
-    return get_json(url, CONFIG.authtoken)
+    if structure == 'json':
+        return get_json(url, CONFIG.authtoken)
+    elif structure == 'xml':
+        return get_xml(url, CONFIG.authtoken)
+    else:
+        errormessage('Unknown structure: ' + str(structure))
+        return False
 
 
 def get_server_name():
@@ -147,26 +153,39 @@ def get_shows_metrics(section, shows, episodes):
 
 def get_sessions():
 
-    sessionsobject = api_request('/status/sessions')
+    try:
+        import xml.etree.ElementTree as ET
+    except Exception as e:
+        errormessage('Failed to import ElementTree Python module!')
+        return False
+
+    sessionsobject = api_request('/status/sessions', structure='xml')
 
     metrics = []
-
-    # Count total sessions
-    metrics.append({'instance': 'sessions-total',
-                    'value': sum_sessions(sessionsobject)})
 
     # Count active/inactive sessions
     active = 0
     inactive = 0
 
-    for session in sessionsobject['_children']:
-        for child in session['_children']:
-            if child['_elementType'] == 'Player':
-                if child['state'] == 'playing':
-                    active += 1
-                else:
-                    inactive += 1
-                break
+    # Parse XML response into ElementTree object
+    try:
+        root = ET.fromstring(sessionsobject)
+    except Exception as e:
+        errormessage('Failed to parse XML!')
+        return False
+
+    # Enumerate sessions
+    for player in root.iter('Player'):
+        if 'state' in player.attrib:
+            if player.attrib['state'] == 'playing':
+                active += 1
+            else:
+                inactive += 1
+        inactive += 1
+
+    # Construct session metrics
+    metrics.append({'instance': 'sessions-total',
+                    'value': active + inactive})
 
     metrics.append({'instance': 'sessions-active',
                     'value': active})
@@ -182,16 +201,26 @@ def get_json(url, authtoken):
                'X-Plex-Token': authtoken
               }
     r = requests.get(url, headers=headers, verify=False)
-    return r.json()
+    try:
+        json_object = r.json()
+        return r.json()
+    except:
+        errormessage('Failed to parse JSON!')
+        return False
+
+
+def get_xml(url, authtoken):
+    headers = {
+               'X-Plex-Token': authtoken
+              }
+    r = requests.get(url, headers=headers, verify=False)
+    return r.text
 
 
 def sum_videos(section, sum_leaf=False):
     if sum_leaf:
         return sum(c['leafCount'] for c in section['_children'])
     return len(section['_children'])
-
-def sum_sessions(data):
-    return len(data['_children'])
 
 
 def parse_config(collectdconfig=None):
