@@ -104,7 +104,17 @@ def get_server_name():
     '''Pull basic server details from PMS'''
 
     server = api_request('/')
-    return server['friendlyName']
+
+    # Old PMS < 1.2.6 schema
+    if 'friendlyName' in server:
+        return server['friendlyName']
+    # Newer PMS 1.2.6+ schema
+    elif 'MediaContainer' in server:
+        return server['MediaContainer']['friendlyName']
+    # Unknown format
+    else:
+        errormessage('Unknown server detail format!')
+        return False
 
 
 def get_sections():
@@ -112,14 +122,21 @@ def get_sections():
 
     sectionobject = api_request('/library/sections')
 
-    if not sectionobject.has_key('_children'):
-        warnmessage('PMS API returned unexpected format from "/library/sections"')
-        return False
-    else:
+    # Old PMS < 1.2.6 schema
+    if '_children' in sectionobject:
         sections = {}
         for section in sectionobject['_children']:
             sections[section['key']] = section
         return sections
+    # Newer PMS 1.2.6+ schema
+    elif 'MediaContainer' in sectionobject:
+        sections = {}
+        for section in sectionobject['MediaContainer']['Metadata']:
+            sections[section['key']] = section
+        return sections
+    # Unknown format
+    errormessage('PMS API returned unexpected format from "/library/sections"')
+    return False
 
 
 def get_section(section):
@@ -218,9 +235,21 @@ def get_xml(url, authtoken):
 
 
 def sum_videos(section, sum_leaf=False):
-    if sum_leaf:
-        return sum(c['leafCount'] for c in section['_children'])
-    return len(section['_children'])
+
+    # Old PMS < 1.2.6 schema
+    if '_children' in section:
+        if sum_leaf:
+            return sum(c['leafCount'] for c in section['_children'])
+        return len(section['_children'])
+    # Newer PMS 1.2.6+ schema
+    elif 'MediaContainer' in section:
+        if sum_leaf:
+            return sum(c['leafCount'] for c in section['MediaContainer']['Metadata'])
+        return len(section['MediaContainer']['Metadata'])
+    # Unknown format
+    else:
+        errormessage('Unknown section format!')
+        return False
 
 
 def parse_config(collectdconfig=None):
