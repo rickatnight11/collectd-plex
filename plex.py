@@ -122,18 +122,30 @@ def get_sections():
 
     sectionobject = api_request('/library/sections')
 
+    apimatched = False
+
     # Old PMS < 1.2.6 schema
     if '_children' in sectionobject:
-        sections = {}
-        for section in sectionobject['_children']:
-            sections[section['key']] = section
-        return sections
-    # Newer PMS 1.2.6+ schema
+        apimatched = True
+        api_sections = sectionobject['_children']
+    # Newer PMS 1.2.6+ schemas
     elif 'MediaContainer' in sectionobject:
+        # PMS 1.3.0 schema
+        if 'Metadata' in sectionobject['MediaContainer']:
+            apimatched = True
+            api_sections = sectionobject['MediaContainer']['Metadata']
+        # PMS 1.3.2 schema
+        elif 'Directory' in sectionobject['MediaContainer']:
+            apimatched = True
+            api_sections = sectionobject['MediaContainer']['Directory']
+
+    # Parse sections
+    if apimatched:
         sections = {}
-        for section in sectionobject['MediaContainer']['Metadata']:
+        for section in api_sections:
             sections[section['key']] = section
         return sections
+
     # Unknown format
     errormessage('PMS API returned unexpected format from "/library/sections"')
     return False
