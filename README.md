@@ -23,6 +23,7 @@ metrics as library size (movies, shows, episodes) and active sessions.
 * `Movies` - collect movie counts (defaults to `True`)
 * `Shows` - collect show counts (defaults to `True`)
 * `Episodes` - collect episode counts (defaults to `True`)
+* `MyPlex` - collect remote access status (defaults to `False`)
 * `Include` - sections to collect media counts for (assumes all, if excluded)
 * `Exclude` - sections to ignore media counts for (assumes all, if excluded)
 
@@ -82,3 +83,35 @@ being collected.
 
 </Plugin>
 ```
+
+### Collect Remote Access status
+
+This configuration will monitor all metrics, plus Remote Access (MyPlex/Plex.tv) status.
+
+```
+<LoadPlugin python>
+  Globals true
+</LoadPlugin>
+
+<Plugin python>
+  ModulePath "/path/to/plugin"
+  Import "plex"
+
+  <Module plex>
+    Host "localhost"
+    Port 32400
+    AuthToken <token>
+    MyPlex true
+  </Module>
+
+</Plugin>
+```
+
+Reported values will be:
+
+| Value | Meaning                                                |
+|-------|--------------------------------------------------------|
+| -1    | Error (not logged in to Plex account on the server?)   |
+| 0     | Unreachable                                            |
+| 1     | Waiting (server is trying to connect to Remote Access) |
+| 2     | Reachable                                              |

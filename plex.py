@@ -26,7 +26,7 @@ def get_metrics(collectd=True):
     CONFIG.servername = get_server_name()
 
     # Check for metric to collect
-    if not (CONFIG.movies or CONFIG.shows or CONFIG.episodes or CONFIG.sessions):
+    if not (CONFIG.movies or CONFIG.shows or CONFIG.episodes or CONFIG.sessions or CONFIG.myplex):
         errormessage('No metrics configured to be collected!')
 
     # Collect media size metrics
@@ -59,6 +59,10 @@ def get_metrics(collectd=True):
     # Collect session metrics
     if CONFIG.sessions:
         metrics.extend(get_sessions())
+
+    # Collect MyPlex metrics
+    if CONFIG.myplex:
+        metrics.extend(get_remote_reachability())
 
     if len(metrics) == 0:
         errormessage('No metrics collected!  Something is wrong!')
@@ -116,6 +120,37 @@ def get_server_name():
         errormessage('Unknown server detail format!')
         return False
 
+def get_remote_reachability():
+    '''Pull remote reachability (plex.tv) status from PMS'''
+
+    server = api_request('/myplex/account')
+
+    metrics = []
+    state = -1
+
+    try:
+        if server['MyPlex']['mappingState'] == 'mapped':
+            # Anything different from 'unreachable' is valid
+            if server['MyPlex']['mappingError'] != 'unreachable':
+                state = 2
+            else:
+                state = 0
+        elif server['MyPlex']['mappingState'] == 'waiting':
+            # Currently estabilishing connection
+            state = 1
+        elif server['MyPlex']['mappingState'] == 'unknown':
+            # No specific info provided by server, assume unreachable
+            state = 0
+        else:
+            state = 0
+    except KeyError:
+        errormessage('Missing MyPlex field, probably not signed in?')
+        state = -1
+
+    metrics.append({'instance': 'remote-reachability',
+                    'value': state})
+    return metrics
+
 
 def get_sections():
     '''Pull sections from PMS'''
@@ -161,7 +196,7 @@ def get_movies_metric(section):
 
     return {'instance': 'movies-{0}'.format(section),
             'value': sum_videos(get_section(section))}
-    
+
 
 def get_shows_metrics(section, shows, episodes):
     '''Return number of shows and/or episodes'''
@@ -222,7 +257,7 @@ def get_sessions():
                     'value': inactive})
 
     return metrics
-    
+
 
 def get_json(url, authtoken):
     headers = {
@@ -303,6 +338,10 @@ def parse_config(collectdconfig=None):
         action='store_true',
         help='Collect episode count(s)')
     parser.add_argument(
+        '--myplex',
+        action='store_true',
+        help='Collect remote (plex.tv) reachability')
+    parser.add_argument(
         '-i', '--include',
         nargs='+',
         default=[],
@@ -349,8 +388,8 @@ else:
     def infomessage(message):
         collectd.info('plex plugin: ' + message)
     def warnmessage(message):
-         collectd.warning('plex plugin: ' + message)
-    def errormessage(message): 
+        collectd.warning('plex plugin: ' + message)
+    def errormessage(message):
         collectd.error('plex plugin: ' + message)
         sys.exit(1)
 
@@ -364,24 +403,25 @@ else:
         authtoken = None
         https = True
         sessions = True
-	movies = True
-	shows = True
-	episodes = True
-	include = []
-	exclude = []
+        movies = True
+        shows = True
+        episodes = True
+        myplex = False
+        include = []
+        exclude = []
         # Convert collectd module parameters
-	for node in conf.children:
-	    key = node.key.lower()
+        for node in conf.children:
+            key = node.key.lower()
             if key == 'include':
-               for section in node.values:
-                   include.append(str(int(section)))
-                   continue
+                for section in node.values:
+                    include.append(str(int(section)))
+                    continue
             elif key == 'exclude':
-               for section in node.values:
-                   exclude.append(str(int(section)))
-                   continue
+                for section in node.values:
+                    exclude.append(str(int(section)))
+                    continue
             else:
-	        val = node.values[0]
+                val = node.values[0]
                 if key == 'host':
                     host = val
                 elif key == 'port':
@@ -391,13 +431,15 @@ else:
                 elif key == 'https':
                     https = val
                 elif key == 'sessions':
-                    sessions = val,
+                    sessions = val
                 elif key == 'movies':
-                    movies = val,
+                    movies = val
                 elif key == 'shows':
-                    shows = val,
+                    shows = val
                 elif key == 'episodes':
-                    episodes = val,
+                    episodes = val
+                elif key == 'myplex':
+                    myplex = val
                 else:
                     warnmessage(' Unknown config key: %s.' % key)
                     continue
@@ -410,8 +452,8 @@ else:
         if authtoken is None:
             errormessage('Missing "AuthToken" parameter!')
         collectdconfig = [host,
-                          port,
-                          authtoken]
+                        port,
+                        authtoken]
         if https:
             collectdconfig.append('--https')
         if sessions:
@@ -422,7 +464,9 @@ else:
             collectdconfig.append('--shows')
         if episodes:
             collectdconfig.append('--episodes')
-        
+        if myplex:
+            collectdconfig.append('--myplex')
+
         if len(include) > 0:
             collectdconfig.append('--include')
             collectdconfig.extend(include)
